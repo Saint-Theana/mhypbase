@@ -17,7 +17,7 @@ DWORD WINAPI Thread(LPVOID lpParam)
 		Sleep(1000);
 	}
 	util::Log("Waiting 5 sec for game initialize.");
-	Sleep(5000);
+	Sleep(3000);
 	util::DisableVMProtect();
 	util::Log("Disabled vm protect.");
 

@@ -144,13 +144,13 @@ namespace hook
             std::regex pattern("(https?://[a-z0-9\\.\\-:]+)");
             text = std::regex_replace(text, pattern, baseUrl);
             
-            util::Log("[hook] activity_domain old: " + oldText);
-            util::Log("[hook] activity_domain new: " + text);
+            util::Log(("[hook] activity_domain old: " + oldText).c_str());
+            util::Log(("[hook] activity_domain new: " + text).c_str());
             return text;
         }
     }
 
-    util::Log("[hook] No patch applied, original: " + original);
+    util::Log(("[hook] No patch applied, original: " + original).c_str());
     return "";
 }
 

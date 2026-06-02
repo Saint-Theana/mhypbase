@@ -119,57 +119,98 @@ namespace hook
 		util::Log("[hook] Reached MoleMole__RSAUtil_RSAVerifyData, and using the configured value.");
 		return CALL_ORIGIN(MoleMole__RSAUtil_RSAVerifyData, il2cpp_string_new(priv), bytes, sign);
 	}
+
 std::string TryPatchConfig(std::string text)
 {
     std::string original = text;
 
-    // ========== 新增：在最前面预处理 baseUrl，补齐缺失端口 ==========
+    // ================== 调试：打印原始输入 ==================
+    util::Log("[hook] >>> Enter TryPatchConfig");
+    util::Log(("[hook] DEBUG original text (first 300): " + original.substr(0, 300)).c_str());
+
+    // ================== 预处理 baseUrl（端口补齐） ==================
     const char* rawBaseUrl = config::GetConfigBaseUrl();
     std::string fixedBaseUrl;
+
+    util::Log(("[hook] DEBUG rawBaseUrl: " + std::string(rawBaseUrl ? rawBaseUrl : "NULL")).c_str());
+
     if (rawBaseUrl && strlen(rawBaseUrl) > 0)
     {
         fixedBaseUrl = rawBaseUrl;
+        util::Log(("[hook] DEBUG fixedBaseUrl initial: " + fixedBaseUrl).c_str());
 
-        // 检查是否缺少端口（包含协议且主机后没有冒号）
         size_t schemePos = fixedBaseUrl.find("://");
+        util::Log(("[hook] DEBUG schemePos: " + std::to_string(schemePos)).c_str());
+
         if (schemePos != std::string::npos)
         {
             std::string afterScheme = fixedBaseUrl.substr(schemePos + 3);
             size_t firstSlash = afterScheme.find('/');
             std::string hostPart = (firstSlash == std::string::npos) ? afterScheme : afterScheme.substr(0, firstSlash);
-            if (hostPart.find(':') == std::string::npos) // 没有端口
+            util::Log(("[hook] DEBUG hostPart: " + hostPart).c_str());
+
+            if (hostPart.find(':') == std::string::npos)
             {
-                // 从原始文本里提取第一个 URL 的端口，若存在就补上
+                util::Log("[hook] DEBUG baseUrl has no port, trying to extract from text...");
+
                 std::regex portExtract(R"(https?://[^/]+:([0-9]+)/)");
                 std::smatch m;
                 if (std::regex_search(text, m, portExtract) && m.size() > 1)
                 {
                     std::string port = ":" + m[1].str();
-                    // 插到主机名之后、路径之前
+                    util::Log(("[hook] DEBUG found port in text: " + port).c_str());
+
                     size_t insertPos = schemePos + 3 + hostPart.length();
                     fixedBaseUrl.insert(insertPos, port);
+                    util::Log(("[hook] DEBUG fixedBaseUrl after patching port: " + fixedBaseUrl).c_str());
+                }
+                else
+                {
+                    util::Log("[hook] DEBUG no port found in text, fixedBaseUrl unchanged.");
                 }
             }
+            else
+            {
+                util::Log("[hook] DEBUG baseUrl already has port, no fix needed.");
+            }
+        }
+        else
+        {
+            util::Log("[hook] DEBUG baseUrl has no scheme (://), skip port fix.");
         }
     }
-    // ===============================================================
+    else
+    {
+        util::Log("[hook] DEBUG rawBaseUrl is NULL or empty.");
+    }
 
-    if (text.find("DispatchConfigs") != std::string::npos)
+    // ================== DispatchConfigs 分支 ==================
+    bool hasDispatch = (text.find("DispatchConfigs") != std::string::npos);
+    util::Log(("[hook] DEBUG hasDispatch: " + std::to_string(hasDispatch)).c_str());
+
+    if (hasDispatch)
     {
         const char* cfg = config::GetConfigChannel();
         if (cfg != nullptr)
         {
             std::string newText(cfg);
-            util::Log(("[hook] DispatchConfigs old: " + original).c_str());
-            util::Log(("[hook] DispatchConfigs new: " + newText).c_str());
+            util::Log("[hook] DispatchConfigs matched, returning patched value.");
             return newText;
         }
+        util::Log("[hook] DispatchConfigs matched but config::GetConfigChannel() is NULL.");
     }
-    else if (text.find("activity_domain") != std::string::npos)
+
+    // ================== activity_domain 分支 ==================
+    bool hasActivity = (text.find("activity_domain") != std::string::npos);
+    util::Log(("[hook] DEBUG hasActivity: " + std::to_string(hasActivity)).c_str());
+
+    if (hasActivity)
     {
-        // 原代码：const char* baseUrl = config::GetConfigBaseUrl();
-        // 改为使用我们补全后的 baseUrl
+        util::Log("[hook] DEBUG activity_domain matched, entering replace logic.");
+
         const char* baseUrl = fixedBaseUrl.empty() ? rawBaseUrl : fixedBaseUrl.c_str();
+        util::Log(("[hook] DEBUG baseUrl for regex_replace: " + std::string(baseUrl ? baseUrl : "NULL")).c_str());
+
         if (baseUrl != nullptr)
         {
             std::string oldText = text;
@@ -180,11 +221,18 @@ std::string TryPatchConfig(std::string text)
             util::Log(("[hook] activity_domain new: " + text).c_str());
             return text;
         }
+        else
+        {
+            util::Log("[hook] DEBUG baseUrl is NULL, skip replace.");
+        }
     }
 
-    util::Log(("[hook] No patch applied, original: " + original).c_str());
-    return "";
+    // ================== 无匹配 ==================
+    util::Log("[hook] No patch applied, returning original.");
+    return "";  // 注意：这里返回空，如果调用方期望保留原文本，可能要改成 return original;
 }
+
+
 
 	LPVOID UnityEngine__JsonUtility_FromJson(LPVOID json, LPVOID type, LPVOID method)
 	{

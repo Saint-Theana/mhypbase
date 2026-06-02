@@ -121,37 +121,53 @@ namespace hook
 	}
 
 
+
+#include <string>
+#include "util.h"
+#include "config.h"
+
 std::string TryPatchConfig(std::string text)
 {
     std::string original = text;
 
-    // ===================== 【全部移到函数最开头】端口自动补齐逻辑 =====================
-    // 功能：检测text中包含 baseUrl的IP/域名 但缺失端口，且baseUrl带端口 → 自动补齐端口
+    // ===================== 【开头】严格按你的思路实现：只补端口，不替换任何链接 =====================
     const char* baseUrlCStr = config::GetConfigBaseUrl();
     if (baseUrlCStr != nullptr)
     {
         std::string baseUrl = baseUrlCStr;
         std::string host, port;
 
-        // 解析baseUrl：提取 主机(IP/域名) 和 端口(可选)
-        std::regex base_parse(R"(^https?://([^:/]+)(?::(\d+))?)");
-        std::smatch match;
-        if (std::regex_search(baseUrl, match, base_parse) && match.size() >= 2)
+        // ========= 步骤1：提取 baseUrl 中的 IP/域名 =========
+        size_t protocolEnd = baseUrl.find("://");
+        if (protocolEnd != std::string::npos)
         {
-            host = match[1].str();
-            if (match.size() > 2) port = match[2].str();
-        }
+            std::string hostPart = baseUrl.substr(protocolEnd + 3); // 跳过 http://
+            size_t portSplit = hostPart.find(':'); // 找端口分隔符
+            size_t pathSplit = hostPart.find('/'); // 找路径分隔符
 
-        // 仅当 baseUrl带端口 且 主机有效时，执行端口补齐
-        if (!port.empty() && !host.empty())
-        {
-            // 正则：匹配 http://主机 或 https://主机 (无端口，后面跟/或结尾)
-            std::regex fix_regex(R"((https?)://()" + host + R"()(?!:\d)(/|$))");
-            // 替换：补齐端口 → http://主机:端口/
-            text = std::regex_replace(text, fix_regex, "$1://$2:" + port + "$3");
+            // 提取纯IP/域名
+            if (portSplit != std::string::npos)
+                host = hostPart.substr(0, portSplit);
+            else if (pathSplit != std::string::npos)
+                host = hostPart.substr(0, pathSplit);
+            else
+                host = hostPart;
+
+            // ========= 步骤2：提取 baseUrl 中的端口（有端口才处理） =========
+            if (portSplit != std::string::npos && (pathSplit == std::string::npos || portSplit < pathSplit))
+            {
+                port = hostPart.substr(portSplit + 1);
+                if (!port.empty() && isdigit(port[0])) // 确保是合法端口
+                {
+                    // ========= 步骤3：精准替换：://host/ → ://host:port/ =========
+                    std::string oldStr = "://" + host + "/";
+                    std::string newStr = "://" + host + ":" + port + "/";
+                    util::ReplaceAll(text, oldStr, newStr); // 全局替换文本里的无端口格式
+                }
+            }
         }
     }
-    // ===================== 【后续原有逻辑完全不动】一行未改 =====================
+    // ===================== 【后续原有逻辑 完全不动 一字未改】 =====================
 
     if (text.find("DispatchConfigs") != std::string::npos)
     {
@@ -180,8 +196,10 @@ std::string TryPatchConfig(std::string text)
     }
 
     util::Log(("[hook] No patch applied, original: " + original).c_str());
-    return original; // 修复原代码致命bug：return "" → return original
+    return original;
 }
+
+
 
 
 	LPVOID UnityEngine__JsonUtility_FromJson(LPVOID json, LPVOID type, LPVOID method)

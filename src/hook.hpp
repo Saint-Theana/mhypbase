@@ -121,31 +121,37 @@ namespace hook
 	}
 
 
-
 #include <string>
-#include "util.h"
-#include "config.h"
+
+// 纯标准C++ 全局字符串替换（自己实现，无任何依赖）
+static void ReplaceAll(std::string& str, const std::string& from, const std::string& to) {
+    size_t start_pos = 0;
+    while ((start_pos = str.find(from, start_pos)) != std::string::npos) {
+        str.replace(start_pos, from.length(), to);
+        start_pos += to.length();
+    }
+}
 
 std::string TryPatchConfig(std::string text)
 {
     std::string original = text;
 
-    // ===================== 【开头】严格按你的思路实现：只补端口，不替换任何链接 =====================
+    // ===================== 【开头】严格按你的思路实现 =====================
     const char* baseUrlCStr = config::GetConfigBaseUrl();
     if (baseUrlCStr != nullptr)
     {
         std::string baseUrl = baseUrlCStr;
         std::string host, port;
 
-        // ========= 步骤1：提取 baseUrl 中的 IP/域名 =========
+        // 步骤1：提取 baseUrl 中的 IP/域名
         size_t protocolEnd = baseUrl.find("://");
         if (protocolEnd != std::string::npos)
         {
-            std::string hostPart = baseUrl.substr(protocolEnd + 3); // 跳过 http://
-            size_t portSplit = hostPart.find(':'); // 找端口分隔符
-            size_t pathSplit = hostPart.find('/'); // 找路径分隔符
+            std::string hostPart = baseUrl.substr(protocolEnd + 3);
+            size_t portSplit = hostPart.find(':');
+            size_t pathSplit = hostPart.find('/');
 
-            // 提取纯IP/域名
+            // 提取主机
             if (portSplit != std::string::npos)
                 host = hostPart.substr(0, portSplit);
             else if (pathSplit != std::string::npos)
@@ -153,21 +159,21 @@ std::string TryPatchConfig(std::string text)
             else
                 host = hostPart;
 
-            // ========= 步骤2：提取 baseUrl 中的端口（有端口才处理） =========
+            // 步骤2：提取端口（有端口才处理）
             if (portSplit != std::string::npos && (pathSplit == std::string::npos || portSplit < pathSplit))
             {
                 port = hostPart.substr(portSplit + 1);
-                if (!port.empty() && isdigit(port[0])) // 确保是合法端口
+                if (!port.empty())
                 {
-                    // ========= 步骤3：精准替换：://host/ → ://host:port/ =========
+                    // 步骤3：精准替换：://host/ → ://host:port/
                     std::string oldStr = "://" + host + "/";
                     std::string newStr = "://" + host + ":" + port + "/";
-                    util::ReplaceAll(text, oldStr, newStr); // 全局替换文本里的无端口格式
+                    ReplaceAll(text, oldStr, newStr);
                 }
             }
         }
     }
-    // ===================== 【后续原有逻辑 完全不动 一字未改】 =====================
+    // ===================== 【后续原有逻辑 完全不动】 =====================
 
     if (text.find("DispatchConfigs") != std::string::npos)
     {

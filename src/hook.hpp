@@ -124,6 +124,7 @@ namespace hook
 {
     std::string original = text;
 
+    // --- DispatchConfigs 保持不变 ---
     if (text.find("DispatchConfigs") != std::string::npos)
     {
         const char* cfg = config::GetConfigChannel();
@@ -135,85 +136,48 @@ namespace hook
             return newText;
         }
     }
-    else if (text.find("activity_domain") != std::string::npos)
+
+    // --- 通用 URL 替换：根据 baseUrl 替换所有匹配的服务器地址 ---
+    const char* baseUrl = config::GetConfigBaseUrl();
+    if (baseUrl != nullptr && strlen(baseUrl) > 0)
     {
-        const char* baseUrl = config::GetConfigBaseUrl();
-        if (baseUrl != nullptr)
+        std::string newBase(baseUrl);
+
+        // 1. 解析 baseUrl，拆出 scheme、host、port
+        std::regex baseParser(R"(^(https?)://([^/:]+)(:[0-9]+)?(/.*)?$)");
+        std::smatch baseMatch;
+        if (std::regex_match(newBase, baseMatch, baseParser))
         {
-            std::string oldText = text;
-            std::string newBase = baseUrl;
+            std::string scheme = baseMatch[1];   // "http"
+            std::string host   = baseMatch[2];   // "192.168.1.11"
+            std::string port   = baseMatch[3];   // ":21000" 或空
 
-            // 1. 从原始文本中提取 协议、主机、端口（只取第一个匹配的 URL 前缀）
-            std::regex urlPrefix(R"((https?://)([a-zA-Z0-9\.\-]+)(:[0-9]+)?)");
-            std::smatch match;
-            if (std::regex_search(oldText, match, urlPrefix))
+            // 2. 构建目标替换字符串： scheme://host + port
+            std::string replacement = scheme + "://" + host + port;
+
+            // 3. 在文本中查找所有 "scheme://host/" 或 "scheme://host:xxxxx/" 并替换
+            //    正则说明：
+            //    (https?://)        协议头
+            //     + host            固定主机名
+            //    (:[0-9]+)?         可选端口
+            //    /                  后面必须紧跟 '/'（保证是主机部分结束）
+            std::regex pattern(scheme + "://" + host + "(?::[0-9]+)?/");
+            text = std::regex_replace(text, pattern, replacement + "/");
+
+            // 4. 如果替换发生了变化，打印日志
+            if (text != original)
             {
-                std::string protocol = match[1].str();   // "http://"
-                std::string host     = match[2].str();   // "127.0.0.1"
-                std::string port     = match[3].str();   // ":8888" 或空
-
-                // 2. 如果配置的 baseUrl 没有协议，把原始协议补上
-                if (newBase.find("://") == std::string::npos)
-                {
-                    newBase = protocol + newBase;
-                }
-
-                // 3. 如果原始 URL 有端口，但 baseUrl 里没有端口，则补上端口
-                if (!port.empty())
-                {
-                    // 找出 "://" 之后的主机部分，检查里面有没有 ':'
-                    size_t schemePos = newBase.find("://");
-                    if (schemePos != std::string::npos)
-                    {
-                        std::string authority = newBase.substr(schemePos + 3); // 主机[:端口][/...]
-                        if (authority.find(':') == std::string::npos)
-                        {
-                            // 没有端口，把原始端口加上
-                            // 注意：authority 里可能已经带有路径，需要插在路径之前
-                            size_t slashPos = authority.find('/');
-                            if (slashPos != std::string::npos)
-                            {
-                                // 有路径，插在路径前
-                                newBase = newBase.substr(0, schemePos + 3) // http://
-                                        + authority.substr(0, slashPos)    // 主机
-                                        + port                             // :8888
-                                        + authority.substr(slashPos);      // /path...
-                            }
-                            else
-                            {
-                                // 没有路径，直接追加端口
-                                newBase += port;
-                            }
-                        }
-                    }
-                    else
-                    {
-                        // baseUrl 没有协议，且我们也没加上（不太可能，这里做兜底）
-                        if (newBase.find(':') == std::string::npos)
-                            newBase += port;
-                    }
-                }
-
-                // 4. 用拼接好的完整前缀替换原 URL 中的协议+主机+端口部分
-                text = std::regex_replace(oldText, urlPrefix, newBase);
+                util::Log(("[hook] URL patch old: " + original).c_str());
+                util::Log(("[hook] URL patch new: " + text).c_str());
+                return text;
             }
-            else
-            {
-                // 如果没匹配到 URL 前缀（极少情况），保持原来简单替换逻辑
-                std::regex pattern("(https?://[a-z0-9\\.\\-:]+)");
-                text = std::regex_replace(text, pattern, baseUrl);
-            }
-
-            util::Log(("[hook] activity_domain old: " + oldText).c_str());
-            util::Log(("[hook] activity_domain new: " + text).c_str());
-            return text;
         }
     }
 
+    // 没有任何修改
     util::Log(("[hook] No patch applied, original: " + original).c_str());
-    return "";
+    return "";   // 或者 return original; 根据你的需求调整
 }
-
 	LPVOID UnityEngine__JsonUtility_FromJson(LPVOID json, LPVOID type, LPVOID method)
 	{
 		auto text = TryPatchConfig(util::ConvertToString(json));

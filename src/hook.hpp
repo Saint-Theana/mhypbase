@@ -141,9 +141,69 @@ namespace hook
         if (baseUrl != nullptr)
         {
             std::string oldText = text;
-            std::regex pattern("(https?://[a-z0-9\\.\\-:]+)");
-            text = std::regex_replace(text, pattern, baseUrl);
-            
+            std::string newBase = baseUrl;
+
+            // 1. 从原始文本中提取 协议、主机、端口（只取第一个匹配的 URL 前缀）
+            std::regex urlPrefix(R"((https?://)([a-zA-Z0-9\.\-]+)(:[0-9]+)?)");
+            std::smatch match;
+            if (std::regex_search(oldText, match, urlPrefix))
+            {
+                std::string protocol = match[1].str();   // "http://"
+                std::string host     = match[2].str();   // "127.0.0.1"
+                std::string port     = match[3].str();   // ":8888" 或空
+
+                // 2. 如果配置的 baseUrl 没有协议，把原始协议补上
+                if (newBase.find("://") == std::string::npos)
+                {
+                    newBase = protocol + newBase;
+                }
+
+                // 3. 如果原始 URL 有端口，但 baseUrl 里没有端口，则补上端口
+                if (!port.empty())
+                {
+                    // 找出 "://" 之后的主机部分，检查里面有没有 ':'
+                    size_t schemePos = newBase.find("://");
+                    if (schemePos != std::string::npos)
+                    {
+                        std::string authority = newBase.substr(schemePos + 3); // 主机[:端口][/...]
+                        if (authority.find(':') == std::string::npos)
+                        {
+                            // 没有端口，把原始端口加上
+                            // 注意：authority 里可能已经带有路径，需要插在路径之前
+                            size_t slashPos = authority.find('/');
+                            if (slashPos != std::string::npos)
+                            {
+                                // 有路径，插在路径前
+                                newBase = newBase.substr(0, schemePos + 3) // http://
+                                        + authority.substr(0, slashPos)    // 主机
+                                        + port                             // :8888
+                                        + authority.substr(slashPos);      // /path...
+                            }
+                            else
+                            {
+                                // 没有路径，直接追加端口
+                                newBase += port;
+                            }
+                        }
+                    }
+                    else
+                    {
+                        // baseUrl 没有协议，且我们也没加上（不太可能，这里做兜底）
+                        if (newBase.find(':') == std::string::npos)
+                            newBase += port;
+                    }
+                }
+
+                // 4. 用拼接好的完整前缀替换原 URL 中的协议+主机+端口部分
+                text = std::regex_replace(oldText, urlPrefix, newBase);
+            }
+            else
+            {
+                // 如果没匹配到 URL 前缀（极少情况），保持原来简单替换逻辑
+                std::regex pattern("(https?://[a-z0-9\\.\\-:]+)");
+                text = std::regex_replace(text, pattern, baseUrl);
+            }
+
             util::Log(("[hook] activity_domain old: " + oldText).c_str());
             util::Log(("[hook] activity_domain new: " + text).c_str());
             return text;

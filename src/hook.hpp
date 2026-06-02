@@ -121,29 +121,38 @@ namespace hook
 	}
 
 	std::string TryPatchConfig(std::string text)
-	{
-		if (text.find("DispatchConfigs") != std::string::npos)
-		{
-			const char* text = config::GetConfigChannel();
-			if (text != nullptr)
-			{
-				util::Log("[hook] Reached StreamingAssets\\20527480.blk, and using the configured value.");
-				return std::string(text);
-			}
-		}
-		else if (text.find("activity_domain") != std::string::npos)
-		{
-			const char* config = config::GetConfigBaseUrl();
-			if (config != nullptr)
-			{
-				util::Log("[hook] Reached StreamingAssets\\MiHoYoSDKRes\\PC\\mihoyo_sdk_res, and using the configured value.");
-				std::regex pattern("(https?://[a-z0-9\\.\\-:]+)");
-				text = std::regex_replace(text, pattern, config);
-				return text.c_str();
-			}
-		}
-		return "";
-	}
+{
+    std::string original = text;
+
+    if (text.find("DispatchConfigs") != std::string::npos)
+    {
+        const char* cfg = config::GetConfigChannel();
+        if (cfg != nullptr)
+        {
+            std::string newText(cfg);
+            util::Log("[hook] DispatchConfigs old: " + original);
+            util::Log("[hook] DispatchConfigs new: " + newText);
+            return newText;
+        }
+    }
+    else if (text.find("activity_domain") != std::string::npos)
+    {
+        const char* baseUrl = config::GetConfigBaseUrl();
+        if (baseUrl != nullptr)
+        {
+            std::string oldText = text;
+            std::regex pattern("(https?://[a-z0-9\\.\\-:]+)");
+            text = std::regex_replace(text, pattern, baseUrl);
+            
+            util::Log("[hook] activity_domain old: " + oldText);
+            util::Log("[hook] activity_domain new: " + text);
+            return text;
+        }
+    }
+
+    util::Log("[hook] No patch applied, original: " + original);
+    return "";
+}
 
 	LPVOID UnityEngine__JsonUtility_FromJson(LPVOID json, LPVOID type, LPVOID method)
 	{

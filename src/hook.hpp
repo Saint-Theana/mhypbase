@@ -130,8 +130,8 @@ namespace hook
         if (cfg != nullptr)
         {
             std::string newText(cfg);
-            util::Log("[hook] DispatchConfigs old: " + original);
-            util::Log("[hook] DispatchConfigs new: " + newText);
+            util::Log(("[hook] DispatchConfigs old: " + original).c_str());
+            util::Log(("[hook] DispatchConfigs new: " + newText).c_str());
             return newText;
         }
     }

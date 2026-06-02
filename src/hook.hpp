@@ -119,12 +119,41 @@ namespace hook
 		util::Log("[hook] Reached MoleMole__RSAUtil_RSAVerifyData, and using the configured value.");
 		return CALL_ORIGIN(MoleMole__RSAUtil_RSAVerifyData, il2cpp_string_new(priv), bytes, sign);
 	}
-
-	std::string TryPatchConfig(std::string text)
+std::string TryPatchConfig(std::string text)
 {
     std::string original = text;
 
-    // --- DispatchConfigs 保持不变 ---
+    // ========== 新增：在最前面预处理 baseUrl，补齐缺失端口 ==========
+    const char* rawBaseUrl = config::GetConfigBaseUrl();
+    std::string fixedBaseUrl;
+    if (rawBaseUrl && strlen(rawBaseUrl) > 0)
+    {
+        fixedBaseUrl = rawBaseUrl;
+
+        // 检查是否缺少端口（包含协议且主机后没有冒号）
+        size_t schemePos = fixedBaseUrl.find("://");
+        if (schemePos != std::string::npos)
+        {
+            std::string afterScheme = fixedBaseUrl.substr(schemePos + 3);
+            size_t firstSlash = afterScheme.find('/');
+            std::string hostPart = (firstSlash == std::string::npos) ? afterScheme : afterScheme.substr(0, firstSlash);
+            if (hostPart.find(':') == std::string::npos) // 没有端口
+            {
+                // 从原始文本里提取第一个 URL 的端口，若存在就补上
+                std::regex portExtract(R"(https?://[^/]+:([0-9]+)/)");
+                std::smatch m;
+                if (std::regex_search(text, m, portExtract) && m.size() > 1)
+                {
+                    std::string port = ":" + m[1].str();
+                    // 插到主机名之后、路径之前
+                    size_t insertPos = schemePos + 3 + hostPart.length();
+                    fixedBaseUrl.insert(insertPos, port);
+                }
+            }
+        }
+    }
+    // ===============================================================
+
     if (text.find("DispatchConfigs") != std::string::npos)
     {
         const char* cfg = config::GetConfigChannel();
@@ -136,48 +165,27 @@ namespace hook
             return newText;
         }
     }
-
-    // --- 通用 URL 替换：根据 baseUrl 替换所有匹配的服务器地址 ---
-    const char* baseUrl = config::GetConfigBaseUrl();
-    if (baseUrl != nullptr && strlen(baseUrl) > 0)
+    else if (text.find("activity_domain") != std::string::npos)
     {
-        std::string newBase(baseUrl);
-
-        // 1. 解析 baseUrl，拆出 scheme、host、port
-        std::regex baseParser(R"(^(https?)://([^/:]+)(:[0-9]+)?(/.*)?$)");
-        std::smatch baseMatch;
-        if (std::regex_match(newBase, baseMatch, baseParser))
+        // 原代码：const char* baseUrl = config::GetConfigBaseUrl();
+        // 改为使用我们补全后的 baseUrl
+        const char* baseUrl = fixedBaseUrl.empty() ? rawBaseUrl : fixedBaseUrl.c_str();
+        if (baseUrl != nullptr)
         {
-            std::string scheme = baseMatch[1];   // "http"
-            std::string host   = baseMatch[2];   // "192.168.1.11"
-            std::string port   = baseMatch[3];   // ":21000" 或空
-
-            // 2. 构建目标替换字符串： scheme://host + port
-            std::string replacement = scheme + "://" + host + port;
-
-            // 3. 在文本中查找所有 "scheme://host/" 或 "scheme://host:xxxxx/" 并替换
-            //    正则说明：
-            //    (https?://)        协议头
-            //     + host            固定主机名
-            //    (:[0-9]+)?         可选端口
-            //    /                  后面必须紧跟 '/'（保证是主机部分结束）
-            std::regex pattern(scheme + "://" + host + "(?::[0-9]+)?/");
-            text = std::regex_replace(text, pattern, replacement + "/");
-
-            // 4. 如果替换发生了变化，打印日志
-            if (text != original)
-            {
-                util::Log(("[hook] URL patch old: " + original).c_str());
-                util::Log(("[hook] URL patch new: " + text).c_str());
-                return text;
-            }
+            std::string oldText = text;
+            std::regex pattern("(https?://[a-z0-9\\.\\-:]+)");
+            text = std::regex_replace(text, pattern, baseUrl);
+            
+            util::Log(("[hook] activity_domain old: " + oldText).c_str());
+            util::Log(("[hook] activity_domain new: " + text).c_str());
+            return text;
         }
     }
 
-    // 没有任何修改
     util::Log(("[hook] No patch applied, original: " + original).c_str());
-    return "";   // 或者 return original; 根据你的需求调整
+    return "";
 }
+
 	LPVOID UnityEngine__JsonUtility_FromJson(LPVOID json, LPVOID type, LPVOID method)
 	{
 		auto text = TryPatchConfig(util::ConvertToString(json));
